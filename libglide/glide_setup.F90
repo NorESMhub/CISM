@@ -1983,6 +1983,7 @@ contains
     call GetValue(section,'flow_factor_float',  model%paramets%flow_enhancement_factor_float)
     call GetValue(section,'default_flwa',       model%paramets%default_flwa)
     call GetValue(section,'efvs_constant',      model%paramets%efvs_constant)
+    call GetValue(section,'effstrain_min',      model%paramets%effstrain_min)
     call GetValue(section,'hydro_time',         model%paramets%hydtim)
     call GetValue(section,'max_slope',          model%paramets%max_slope)
 
