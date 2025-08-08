@@ -322,6 +322,8 @@ contains
          instance%model%climate%eus,instance%model%geometry%lsrf)
     instance%model%geometry%usrf = max(0.d0, instance%model%geometry%thck + instance%model%geometry%lsrf)
 
+    instance%model%geometry%usrf_reff = instance%model%geometry%usrf
+
   end subroutine glad_i_readdata
 
   !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
