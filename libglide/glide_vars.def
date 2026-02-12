@@ -637,6 +637,15 @@ data:          data%geometry%thkmask
 type:          int
 load:          1
 
+[usrf_reff]
+dimensions:    time, y1, x1
+units:         meter
+long_name:     Reference ice upper surface elevation (observed or simulated)
+data:          data%geometry%usrf_reff
+factor:        thk0
+load:          1
+standard_name: surface_altitude
+
 [usurf]
 dimensions:    time, y1, x1
 units:         meter

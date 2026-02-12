@@ -34,6 +34,10 @@ module glissade_utils
   use glimmer_log
   use glide_types
   use cism_parallel, only: this_rank, main_task
+  ! Note: Using the glide_diagnostics module creates a circularity.
+  !       For that reason, point_diag should be called from a higher level, not inside utility subroutines
+  ! TODO: Remove the circularity by moving point_diag to this module?
+  !!  use glide_diagnostics, only: point_diag
 
   implicit none
 
@@ -114,46 +118,6 @@ contains
 
     if (usrf_max > tiny(0.0d0)) then
 
-       if (verbose_adjust_thickness .and. this_rank == rtest) then
-          i = itest
-          j = jtest
-          print*, ' '
-          print*, 'adjust thck: itest, jtest, rank =', itest, jtest, rtest
-          print*, ' '
-          print*, 'Before thck adjustment, usrf (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%usrf(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'Before thck adjustment, thck (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'Before thck adjustment, topg (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'Before thck adjustment, cavity thickness (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') (model%geometry%usrf(i,j) - model%geometry%thck(i,j)  &
-                     - model%geometry%topg(i,j)) * thk0
-             enddo
-             write(6,*) ' '
-          enddo
-       endif   ! verbose
-
        do j = 1, ny
           do i = 1, nx
              topg = model%geometry%topg(i,j) - model%climate%eus  ! shorthand for relative bed topography
@@ -171,46 +135,6 @@ contains
              endif
           enddo
        enddo
-
-       if (verbose_adjust_thickness .and. this_rank == rtest) then
-          i = itest
-          j = jtest
-          print*, ' '
-          print*, 'adjust thck: itest, jtest, rank =', itest, jtest, rtest
-          print*, ' '
-          print*, 'After thck adjustment, usrf (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%usrf(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'After thck adjustment, thck (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'After thck adjustment, topg (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-             enddo
-             write(6,*) ' '
-          enddo
-          print*, ' '
-          print*, 'After thck adjustment, cavity thickness (m):'
-          do j = jtest_p3, jtest_m3, -1
-             do i = itest_m3, itest_p3
-                write(6,'(f10.3)',advance='no') (model%geometry%usrf(i,j) - model%geometry%thck(i,j)  &
-                     - model%geometry%topg(i,j)) * thk0
-             enddo
-             write(6,*) ' '
-          enddo
-       endif   ! verbose
 
     else   ! usrf_max < tiny
 
@@ -291,40 +215,9 @@ contains
     model%geometry%usrf = max(0.d0, model%geometry%thck + model%geometry%lsrf)
 
     ! Save input fields
-    topg = (model%geometry%topg - model%climate%eus) * thk0
-    thck = model%geometry%thck * thk0
-    usrf = model%geometry%usrf * thk0
-
-    if (verbose_smooth_usrf .and. this_rank == rtest) then
-       i = itest
-       j = jtest
-       print*, ' '
-       print*, 'itest, jtest, rank =', itest, jtest, rtest
-       print*, ' '
-       print*, 'Before Laplacian smoother, topg (m):'
-       do j = jtest+3, jtest-3, -1
-          do i = itest-3, itest+3
-             write(6,'(f10.3)',advance='no') topg(i,j)
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Before Laplacian smoother, usrf (m):'
-       do j = jtest+3, jtest-3, -1
-          do i = itest-3, itest+3
-             write(6,'(f10.3)',advance='no') usrf(i,j)
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Before Laplacian smoother, thck (m):'
-       do j = jtest+3, jtest-3, -1
-          do i = itest-3, itest+3
-             write(6,'(f10.3)',advance='no') thck(i,j)
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
+    topg = (model%geometry%topg - model%climate%eus)
+    thck = model%geometry%thck
+    usrf = model%geometry%usrf
 
     ! compute initial masks
     call glissade_get_masks(nx,                  ny,                    &
@@ -375,29 +268,6 @@ contains
     ! Copy the new thickness and usrf to the model derived type
     model%geometry%thck = thck/thk0
     model%geometry%usrf = usrf/thk0
-
-    if (verbose_smooth_usrf .and. this_rank == rtest) then
-       i = itest
-       j = jtest
-       print*, ' '
-       print*, 'itest, jtest, rank =', itest, jtest, rtest
-       print*, ' '
-       print*, 'After Laplacian smoother, usrf (m):'
-       do j = jtest+3, jtest-3, -1
-          do i = itest-3, itest+3
-             write(6,'(f10.3)',advance='no') usrf(i,j)
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'After Laplacian smoother, thck (m):'
-       do j = jtest+3, jtest-3, -1
-          do i = itest-3, itest+3
-             write(6,'(f10.3)',advance='no') thck(i,j)
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
 
   end subroutine glissade_smooth_usrf
 
@@ -472,37 +342,6 @@ contains
                             ice_mask,                                   &
                             floating_mask = floating_mask)
 
-    if (verbose_smooth_topg .and. this_rank == rtest) then
-       i = itest
-       j = jtest
-       print*, ' '
-       print*, 'itest, jtest, rank =', itest, jtest, rtest
-       print*, ' '
-       print*, 'Before Laplacian smoother, topg (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Before Laplacian smoother, usrf (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%usrf(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Before Laplacian smoother, thck (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
-
     call glissade_laplacian_smoother(model%general%ewn, model%general%nsn,  &
                                      model%geometry%topg, topg_smoothed,    &
                                      npoints_stencil = 5)
@@ -529,37 +368,6 @@ contains
     !WHL - usrf for debugging only
     call glide_calclsrf(model%geometry%thck, model%geometry%topg, model%climate%eus, model%geometry%lsrf)
     model%geometry%usrf = max(0.d0, model%geometry%thck + model%geometry%lsrf)
-
-    if (verbose_smooth_topg .and. this_rank == rtest) then
-       i = itest
-       j = jtest
-       print*, ' '
-       print*, 'itest, jtest, rank =', itest, jtest, rtest
-       print*, ' '
-       print*, 'After Laplacian smoother, topg (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'After Laplacian smoother, usrf (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%usrf(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'After Laplacian smoother, thck (m):'
-       do j = jtest_p3, jtest_m3, -1
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
 
   end subroutine glissade_smooth_topography
 
@@ -657,57 +465,6 @@ contains
     call glide_calclsrf(model%geometry%thck, model%geometry%topg, model%climate%eus, model%geometry%lsrf)
     model%geometry%usrf = max(0.d0, model%geometry%thck + model%geometry%lsrf)
 
-    if (verbose_adjust_topg .and. this_rank == rtest) then
-       print*, ' '
-       print*, 'Input usrf (m):'
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(a10)',advance='no') '          '
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%usrf(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Input thck (m):'
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(a10)',advance='no') '          '
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-       print*, ' '
-       print*, 'Input lsrf (m):'
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(a10)',advance='no') '          '
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%lsrf(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
-
-    if (verbose_adjust_topg .and. this_rank == rtest) then
-       print*, ' '
-       print*, 'Input topography (m):'
-       print*, ' '
-       write(6,'(a10)',advance='no') '  y1 \ x1 '
-       do i = itest_m3, itest_p3
-          write(6,'(f10.0)',advance='no') model%general%x1(i)
-       enddo
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(f10.0)',advance='no') model%general%y1(j)
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
-
     !TODO - Use model%geometry%topg - model%climate%eus?
     allocate(topg(model%general%ewn, model%general%nsn))
     topg = model%geometry%topg * thk0
@@ -757,43 +514,12 @@ contains
     model%geometry%topg = topg / thk0
     deallocate(topg)
 
-    if (verbose_adjust_topg .and. this_rank == rtest) then
-       print*, ' '
-       print*, 'New topography (m):'
-       print*, ' '
-       write(6,'(a10)',advance='no') '  y1 \ x1 '
-       do i = itest_m3, itest_p3
-          write(6,'(f10.0)',advance='no') model%general%x1(i)
-       enddo
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(f10.0)',advance='no') model%general%y1(j)
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%topg(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
-
     ! In some cells, the new lower surface (usrf - thck) may lie below the topography.
     ! In these cells, reduce the ice thickness such that lsrf = topg, preserving the input value of usrf.
 
     where (model%geometry%usrf - model%geometry%thck < model%geometry%topg)
        model%geometry%thck = model%geometry%usrf - model%geometry%topg
     endwhere
-
-    if (verbose_adjust_topg .and. this_rank == rtest) then
-       print*, ' '
-       print*, 'Corrected thck (m):'
-       print*, ' '
-       do j = jtest_p3, jtest_m3, -1
-          write(6,'(a10)',advance='no') '          '
-          do i = itest_m3, itest_p3
-             write(6,'(f10.3)',advance='no') model%geometry%thck(i,j)*thk0
-          enddo
-          write(6,*) ' '
-       enddo
-    endif
 
   end subroutine glissade_adjust_topography
 

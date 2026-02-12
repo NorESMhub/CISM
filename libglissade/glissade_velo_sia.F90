@@ -332,14 +332,15 @@
     !  on each side.  This is appropriate for problems with ice shelves, but is
     !  is less accurate than options 0 or 1 for land-based problems (e.g., Halfar SIA).
 
-    call glissade_gradient(nx,        ny,          &
-                           dx,        dy,          &
+    call glissade_gradient(nx,           ny,       &
+                           dx,           dy,       &
+                           itest, jtest, rtest,    &
                            usrf,                   &
-                           dusrf_dx,  dusrf_dy,    &
+                           dusrf_dx,     dusrf_dy, &
                            ice_mask,               &
                            gradient_margin_in = whichgradient_margin)
 
-    if (verbose_sia .and. main_task) then
+   if (verbose_sia .and. main_task) then
        print*, ' '
        print*, 'In glissade_velo_sia_solve'
     endif

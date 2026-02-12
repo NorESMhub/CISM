@@ -6648,25 +6648,28 @@
        ! With gradient_margin_in = 1, only ice-covered cells are included in the gradient.
        ! This is the appropriate setting, since efvs and strain rates have no meaning in ice-free cells.
        
-       call glissade_gradient(nx,               ny,         &
-                              dx,               dy,         &
-                              work1,                        &
-                              dwork1_dx,        dwork1_dy,  &
-                              ice_mask,                     &
+       call glissade_gradient(nx,           ny,         &
+                              dx,           dy,         &
+                              itest, jtest, rtest,      &
+                              work1,                    &
+                              dwork1_dx,    dwork1_dy,  &
+                              ice_mask,                 &
                               gradient_margin_in = 1)
 
-       call glissade_gradient(nx,               ny,         &
-                              dx,               dy,         &
-                              work2,                        &
-                              dwork2_dx,        dwork2_dy,  &
-                              ice_mask,                     &
+       call glissade_gradient(nx,           ny,         &
+                              dx,           dy,         &
+                              itest, jtest, rtest,      &
+                              work2,                    &
+                              dwork2_dx,    dwork2_dy,  &
+                              ice_mask,                 &
                               gradient_margin_in = 1)
 
-       call glissade_gradient(nx,               ny,         &
-                              dx,               dy,         &
-                              work3,                        &
-                              dwork3_dx,        dwork3_dy,  &
-                              ice_mask,                     &
+       call glissade_gradient(nx,           ny,         &
+                              dx,           dy,         &
+                              itest, jtest, rtest,      &
+                              work3,                    &
+                              dwork3_dx,    dwork3_dy,  &
+                              ice_mask,                 &
                               gradient_margin_in = 1)
 
        ! loop over locally owned active vertices

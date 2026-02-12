@@ -199,6 +199,9 @@ module glide_types
   integer, parameter :: FORCE_RETREAT_ALL_ICE = 1
   integer, parameter :: FORCE_RETREAT_FLOATING_ICE = 2
 
+  integer, parameter :: NO_EC_UPDATE = 0
+  integer, parameter :: EC_UPDATE = 1
+
   integer, parameter :: VERTINT_STANDARD = 0
   integer, parameter :: VERTINT_KINEMATIC_BC = 1
 
@@ -568,8 +571,8 @@ module glide_types
 
     integer :: ocean_data_extrapolate = 0
     !> \begin{description}
-    !> \item[0] ocean data not extrapolated to shelf cavities
-    !> \item[1] ocean data extrapolated to shelf cavities
+    !> \item[0] CISM will not extrapolate ocean data into cavities
+    !> \item[1] CISM will extrapolate off-shelf ocean data into shelf cavities
     !> \end{description}
 
     logical :: enable_bmlt_anomaly = .false.
@@ -1147,6 +1150,11 @@ module glide_types
     !> item[1] force retreat of all ice identified by a retreat mask
     !> item[2] force retreat of floating or weakly grounded ice identified by a retreat mask
 
+    integer :: use_ec_update = 1
+    !> Flag that indicates whether update smb for elevation class changes in coupled or T-compset mode
+    !> item[0] use ec (default(
+    !> item[1] do not use ec
+    
     integer :: which_ho_ice_age = 1
     !> Flag that indicates whether to compute a 3d ice age tracer
     !> \begin{description}
@@ -1195,6 +1203,9 @@ module glide_types
 
     real(dp),dimension(:,:),pointer :: usrf => null()
     !> The elevation of the upper ice surface, divided by \texttt{thk0}.
+
+    real(dp),dimension(:,:),pointer :: usrf_reff => null()
+    !> Michele 18/12/22: Reference surface elevation.
 
     real(dp),dimension(:,:),pointer :: lsrf => null() 
     !> The elevation of the lower ice surface, divided by \texttt{thk0}.
@@ -2982,6 +2993,7 @@ contains
     ! geometry arrays
     call coordsystem_allocate(model%general%ice_grid, model%geometry%thck)
     call coordsystem_allocate(model%general%ice_grid, model%geometry%usrf)
+    call coordsystem_allocate(model%general%ice_grid, model%geometry%usrf_reff)
     call coordsystem_allocate(model%general%ice_grid, model%geometry%lsrf)
     call coordsystem_allocate(model%general%ice_grid, model%geometry%topg)
     call coordsystem_allocate(model%general%ice_grid, model%geometry%topg_stdev)
@@ -3676,6 +3688,8 @@ contains
         deallocate(model%geometry%thck)
     if (associated(model%geometry%usrf)) &
         deallocate(model%geometry%usrf)
+    if (associated(model%geometry%usrf_reff)) &
+        deallocate(model%geometry%usrf_reff)
     if (associated(model%geometry%lsrf)) &
         deallocate(model%geometry%lsrf)
     if (associated(model%geometry%topg)) &

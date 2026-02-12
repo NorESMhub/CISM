@@ -813,6 +813,7 @@ contains
     call GetValue(section, 'block_inception',             model%options%block_inception)
     call GetValue(section, 'remove_ice_caps',             model%options%remove_ice_caps)
     call GetValue(section, 'force_retreat',               model%options%force_retreat)
+    call GetValue(section, 'use_ec_update',               model%options%use_ec_update)
     call GetValue(section, 'which_ho_ice_age',            model%options%which_ho_ice_age)
     call GetValue(section, 'enable_glaciers',             model%options%enable_glaciers)
     call GetValue(section, 'glissade_maxiter',            model%options%glissade_maxiter)
@@ -2089,6 +2090,11 @@ contains
                 call write_log('  Warning: Can be unstable when remove_isthmuses = F')
              endif
           endif
+ 
+          if (model%options%use_ec_update == NO_EC_UPDATE) then
+             write(message,*) 'Elevation Classes are turned off. SMB will be calculared ar reference elevation'
+             call write_log(message)
+           end if
 
           write(message,*) 'ho_whichice_age         : ',model%options%which_ho_ice_age,  &
                             ho_whichice_age(model%options%which_ho_ice_age)
@@ -3761,6 +3767,10 @@ contains
         if (options%force_retreat /= FORCE_RETREAT_NONE) then
            call glide_add_to_restart_variable_list('ice_fraction_retreat_mask', model_id)
            call glide_add_to_restart_variable_list('reference_thck', model_id)
+        endif
+
+        if (options%use_ec_update /= EC_UPDATE) then
+           call glide_add_to_restart_variable_list('usrf_reff', model_id)
         endif
 
         ! other Glissade options

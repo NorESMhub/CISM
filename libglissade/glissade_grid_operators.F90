@@ -39,10 +39,14 @@
 module glissade_grid_operators
 
     use glimmer_global, only: dp
+    use glimmer_physcon, only: pi
     use glimmer_log
     use glide_types
     use cism_parallel, only: this_rank, main_task, nhalo, &
          parallel_type, parallel_halo, parallel_reduce_sum, parallel_globalindex
+  ! Note: Using the glide_diagnostics module creates a circularity.
+  !       For that reason, point_diag should be called from a higher level, not from inside this module.
+!!    use glide_diagnostics, only: point_diag
 
     implicit none
 
@@ -303,8 +307,9 @@ contains
 
 !****************************************************************************
 
-  subroutine glissade_gradient(nx,           ny,        &
+subroutine glissade_gradient(nx,           ny,        &
                                dx,           dy,        &
+                               itest, jtest, rtest,     &
                                field,                   &
                                df_dx,        df_dy,     &
                                ice_mask,                &
@@ -333,6 +338,9 @@ contains
     real(dp), intent(in) ::     &
        dx, dy                   ! grid cell length and width
                                 ! assumed to have the same value for each grid cell
+
+    integer, intent(in) ::      &
+       itest, jtest, rtest      ! coordinates of diagnostic point
 
     real(dp), dimension(nx,ny), intent(in) ::       &
        field                    ! input scalar field, defined at cell centers
@@ -457,30 +465,6 @@ contains
 
        enddo  ! i
     enddo     ! j
-
-    if (verbose_gradient .and. main_task) then
-       print*, ' '
-       print*, 'Centered gradient:'
-       print*, ' '
-       print*, 'df_dx:'
-       do j = ny-1, 1, -1
-!!          do i = 1, nx-1
-          do i = 1, nx/2
-             write(6,'(f9.6)',advance='no') df_dx(i,j)
-          enddo
-          print*, ' '
-       enddo
-
-       print*, ' '
-       print*, 'df_dy:'
-       do j = ny-1, 1, -1
-!!          do i = 1, nx-1
-          do i = 1, nx/2
-             write(6,'(f9.6)',advance='no') df_dy(i,j)
-          enddo
-          print*, ' '
-       enddo
-    endif
 
   end subroutine glissade_gradient
 
@@ -685,27 +669,6 @@ contains
        enddo
 
     endif  ! present(max_slope)
-
-    if (verbose_gradient .and. main_task) then
-       print*, ' '
-       print*, 'Edge gradient:'
-       print*, ' '
-       print*, 'df_dx:'
-       do j = ny-1, 1, -1
-          do i = 1, nx
-             write(6,'(f8.4)',advance='no') df_dx(i,j)
-          enddo
-          print*, ' '
-       enddo
-       print*, ' '
-       print*, 'df_dy:'
-       do j = ny, 1, -1
-          do i = 1, nx-1
-             write(6,'(f8.4)',advance='no') df_dy(i,j)
-          enddo
-          print*, ' '
-       enddo
-    endif
 
   end subroutine glissade_gradient_at_edges
 
@@ -1252,47 +1215,6 @@ contains
 
     endif   ! present(max_slope)
 
-    if (verbose_gradient .and. this_rank==rtest) then
-       print*, ' '
-       print*, 'Hybrid gradient, i, j, task =', itest, jtest, rtest
-       print*, ' '
-       print*, 'ds_dx_edge:'
-       do j = jtest+3, jtest-3, -1
-          write(6,'(i6)',advance='no') j
-          do i = itest-3, itest+3
-             write(6,'(f9.6)',advance='no') ds_dx_edge(i,j)
-          enddo
-          print*, ' '
-       enddo
-       print*, ' '
-       print*, 'ds_dy_edge:'
-       do j = jtest+3, jtest-3, -1
-          write(6,'(i6)',advance='no') j
-          do i = itest-3, itest+3
-             write(6,'(f9.6)',advance='no') ds_dy_edge(i,j)
-          enddo
-          print*, ' '
-       enddo
-       print*, ' '
-       print*, 'ds_dx:'
-       do j = jtest+3, jtest-3, -1
-          write(6,'(i6)',advance='no') j
-          do i = itest-3, itest+3
-             write(6,'(f9.6)',advance='no') ds_dx(i,j)
-          enddo
-          print*, ' '
-       enddo
-       print*, ' '
-       print*, 'ds_dy:'
-       do j = jtest+3, jtest-3, -1
-          write(6,'(i6)',advance='no') j
-          do i = itest-3, itest+3
-             write(6,'(f9.6)',advance='no') ds_dy(i,j)
-          enddo
-          print*, ' '
-       enddo
-    endif
-
     ! Note: Halo updates moved to higher level
 !    call staggered_parallel_halo(ds_dx)
 !    call staggered_parallel_halo(ds_dy)
@@ -1301,13 +1223,19 @@ contains
 
 !****************************************************************************
 
-  subroutine glissade_slope_angle(nx,         ny,      &
-                                  dx,         dy,      &
-                                  zsfc,                &
-                                  theta_slope,         &
-                                  slope_mask_in)
+  subroutine glissade_slope_angle(&
+       nx,           ny,    &
+       dx,           dy,    &
+       itest, jtest, rtest, &
+       zsfc,                &
+       theta_slope,         &
+       theta_slope_x,       &
+       theta_slope_y,       &
+       phi_slope,           &
+       slope_mask_in)
 
     ! Compute the slope angle between a surface of elevation zsfc and the horizontal.
+    ! Optionally, compute the angle (in the xy plane) of the direction of steepest descent.
 
     !----------------------------------------------------------------
     ! Input-output arguments
@@ -1320,11 +1248,21 @@ contains
          dx, dy                   ! grid cell length and width
                                   ! assumed to have the same value for each grid cell
 
+    integer, intent(in) ::      &
+         itest, jtest, rtest      ! coordinates of diagnostic point
+
     real(dp), dimension(nx,ny), intent(in) ::       &
          zsfc                     ! elevation of the surface whose slope is to be computed
 
     real(dp), dimension(nx,ny), intent(out) ::       &
-         theta_slope              ! angle formed by the surface with the horizontal (x-y) direction
+         theta_slope              ! surface elevation angle (radians, 0 to pi/2) relative to the horizontal plane
+
+    real(dp), dimension(nx,ny), intent(out), optional ::       &
+         theta_slope_x,         & ! surface elevation angle in the x direction
+         theta_slope_y            ! surface elevation angle in the x direction
+
+    real(dp), dimension(nx,ny), intent(out), optional ::       &
+         phi_slope                ! direction of steepest descent (radians, 0 to 2*pi), relative to the x axis
 
     integer, dimension(nx,ny), intent(in), optional ::  &
          slope_mask_in            ! = 1 for the part of the surface whose slope is computed, else = 0
@@ -1334,14 +1272,18 @@ contains
     !----------------------------------------------------------------
 
     integer, dimension(nx,ny) ::  &
-         slope_mask                 ! local version of slope_mask
+         slope_mask               ! local version of slope_mask
 
     real(dp), dimension(nx-1,ny-1) ::    &
-         dz_dx, dz_dy,         &  ! gradient components of zsfc, defined at cell vertices
-         stag_slope               ! slope (= magnitude of gradient) at cell vertices
+         stag_dz_dx, stag_dz_dy   ! gradient components of zsfc, defined at cell vertices
 
     real(dp), dimension(nx,ny) ::    &
-         slope                    ! stag_slope interpolated to cell centers
+         dz_dx, dz_dy,           &! gradient components of zsfc, defined at cell centers
+         slope
+
+    integer :: i, j
+    real(dp) :: vector_x, vector_y
+    character(len=200) :: message
 
     ! initialize
 
@@ -1353,43 +1295,412 @@ contains
 
     theta_slope = 0.0d0
 
-    ! Compute the x and y components of the surface gradient
+    ! Compute the x and y components of the surface gradient at vertices
     ! Note: With gradient_margin_in = 1, edge gradients are computed only for edges
     !        with slope_mask = 1 on either side.
     !       For instance, if slope_mask = 1 for floating cells only, then dz_dx = dz_dy = 0
     !        for grounded regions.
 
-    call glissade_gradient(nx,         ny,          &
-                           dx,         dy,          &
-                           zsfc,                    &
-                           dz_dx,      dz_dy,       &
-                           slope_mask,              &
+    call glissade_gradient(nx,           ny,          &
+                           dx,           dy,          &
+                           itest, jtest, rtest,       &
+                           zsfc,                      &
+                           stag_dz_dx,   stag_dz_dy,  &
+                           slope_mask,                &
                            gradient_margin_in = 1)
 
-    ! Compute the magnitude of the gradient.  This is the scalar slope, on the staggered grid.
-    stag_slope = sqrt(dz_dx**2 + dz_dy**2)
-
-    ! Interpolate the slope to cell centers
+    ! Interpolate the gradient components to cell centers
 
     call glissade_unstagger(nx,          ny,        &
-                            stag_slope,  slope)
+                            stag_dz_dx,  dz_dx)
+    call glissade_unstagger(nx,          ny,        &
+                            stag_dz_dy,  dz_dy)
 
-    ! Compute the slope angle
-    theta_slope = atan(slope)
+    ! Compute the magnitude of the gradient
+    slope = sqrt(dz_dx**2 + dz_dy**2)
 
-    ! Note: Halo update of theta_slope moved to higher level
+    ! Compute the slope angle on the staggered grid
+    ! Since slope is non-negative, theta_slope is in the range [0,pi/2)
+    where (slope >= 0.0d0)
+       theta_slope = atan(slope)
+    elsewhere
+       theta_slope = 0.0d0
+    endwhere
+
+    ! Compute slopes in the x and y directions
+    if (present(theta_slope_x)) theta_slope_x = atan(abs(dz_dx))
+    if (present(theta_slope_y)) theta_slope_y = atan(abs(dz_dy))
+
+    ! Optionally, compute the direction of steepest descent
+    if (present(phi_slope)) then
+       phi_slope = 0.0d0
+       do j = 1, ny-1
+          do i = 1, nx-1
+             if (slope(i,j) > 0.0d0) then
+                vector_x = -dz_dx(i,j)
+                vector_y = -dz_dy(i,j)
+                if (abs(vector_x) > 0.0d0) then
+                   phi_slope(i,j) = atan(vector_y/vector_x)
+                elseif (abs(vector_y) > 0.0d0) then
+                   if (vector_y > 0.0d0) then
+                      phi_slope(i,j) =  pi/2.0d0
+                   else
+                      phi_slope(i,j) = 3.0d0*pi/2.0d0
+                   endif
+                endif
+             else   ! vector of zero length; default to phi = 0 for flat surfaces
+                phi_slope(i,j) = 0.0d0
+             endif
+             ! The range of atan is (-pi/2, pi/2)
+             ! Add pi if the vector lies in quadrant 2 or 3
+             if (vector_x < 0.0) phi_slope(i,j) = phi_slope(i,j) + pi
+             ! Make sure phi is in the range [0,360)
+             if (phi_slope(i,j) < 0.0d0) phi_slope(i,j) = phi_slope(i,j) + 2.0d0*pi
+             if (phi_slope(i,j) > 2.0d0*pi) phi_slope(i,j) = phi_slope(i,j) - 2.0d0*pi
+             ! bug check
+             if (phi_slope(i,j) < 0.0d0 .or. phi_slope(i,j) >= 2.0d0*pi) then
+                write(message,*) 'Error, glissade_slope_angle, phi out of range, i, j, phi =', &
+                     i, j, phi_slope(i,j), phi_slope(i,j)/pi
+                call write_log(message)
+             endif
+          enddo   ! i
+       enddo   ! j
+    endif   ! present(phi_slope)
+
+    ! Note: Halo updates of theta_slope and phi_slope moved to higher level
 
   end subroutine glissade_slope_angle
 
 !****************************************************************************
 
-  subroutine glissade_laplacian_smoother(nx,         ny,            &
-                                         var,        var_smooth,    &
-                                         smoother_mask,             &
-                                         npoints_stencil)
+  subroutine glissade_slope_angle_staggered(&
+       nx,           ny,    &
+       dx,           dy,    &
+       itest, jtest, rtest, &
+       zsfc,                &
+       theta_slope,         &
+       theta_slope_x,       &
+       theta_slope_y,       &
+       phi_slope,           &
+       slope_mask_in)
+
+    ! Compute the slope angle between a surface of elevation zsfc and the horizontal.
+    ! Optionally, compute the angle (in the xy plane) of the direction of steepest descent.
+
+    ! This is like the previous subroutine, except that given an elevation field on the
+    !  unstaggered grid, it computes theta_slope on the staggered grid.
 
     !----------------------------------------------------------------
-    ! Given a 2D field on the ice grid, smooth the field using a 9-point Laplacian stencil.
+    ! Input-output arguments
+    !----------------------------------------------------------------
+
+    integer, intent(in) ::      &
+         nx, ny                   ! horizontal grid dimensions
+
+    real(dp), intent(in) ::     &
+         dx, dy                   ! grid cell length and width
+                                  ! assumed to have the same value for each grid cell
+
+    integer, intent(in) ::      &
+         itest, jtest, rtest      ! coordinates of diagnostic point
+
+    real(dp), dimension(nx,ny), intent(in) ::       &
+         zsfc                     ! elevation of the surface whose slope is to be computed
+
+    real(dp), dimension(nx-1,ny-1), intent(out) ::  &
+         theta_slope              ! surface elevation angle (radians, 0 to pi/2) relative to the horizontal (x-y) plane
+
+    real(dp), dimension(nx-1,ny-1), intent(out), optional :: &
+         theta_slope_x,         & ! surface elevation angle in the x direction
+         theta_slope_y            ! surface elevation angle in the x direction
+
+    real(dp), dimension(nx-1,ny-1), intent(out), optional ::  &
+         phi_slope                ! direction of steepest descent (radians, 0 to 2*pi)), relative to phi = 0 along the x axis
+
+    integer, dimension(nx,ny), intent(in), optional ::  &
+         slope_mask_in            ! = 1 for the part of the surface whose slope is computed, else = 0
+
+    !----------------------------------------------------------------
+    ! Local variables
+    !----------------------------------------------------------------
+
+    integer, dimension(nx,ny) ::  &
+         slope_mask               ! local version of slope_mask
+
+    real(dp), dimension(nx-1,ny-1) ::    &
+         dz_dx, dz_dy,         &  ! gradient components of zsfc, defined at cell vertices
+         slope                    ! slope (= magnitude of gradient) at cell vertices
+
+    integer :: i, j
+    real(dp) :: vector_x, vector_y
+    character(len=200) :: message
+
+    ! initialize
+
+    if (present(slope_mask_in)) then
+       slope_mask = slope_mask_in
+    else
+       slope_mask = 1    ! default is to compute the slope everywhere
+    endif
+
+    ! Compute the x and y components of the surface gradient at cell vertices.
+    ! Note: With gradient_margin_in = 1, edge gradients are computed only for edges
+    !        with slope_mask = 1 on either side.
+    !       For instance, if slope_mask = 1 for floating cells only, then dz_dx = dz_dy = 0
+    !        for grounded regions.
+
+    call glissade_gradient(nx,           ny,          &
+                           dx,           dy,          &
+                           itest, jtest, rtest,       &
+                           zsfc,                      &
+                           dz_dx,        dz_dy,       &
+                           slope_mask,                &
+                           gradient_margin_in = 1)
+
+    ! Compute the magnitude of the gradient
+    slope = sqrt(dz_dx**2 + dz_dy**2)
+
+    ! Compute the slope angle at vertices
+    ! Since slope is non-negative, theta_slope is in the range [0,pi/2)
+    where (slope >= 0.0d0)
+       theta_slope = atan(slope)
+    elsewhere
+       theta_slope = 0.0d0
+    endwhere
+
+    ! Compute slopes in the x and y directions
+    if (present(theta_slope_x)) theta_slope_x = atan(abs(dz_dx))
+    if (present(theta_slope_y)) theta_slope_y = atan(abs(dz_dy))
+
+
+    ! Optionally, compute the direction of steepest descent
+    if (present(phi_slope)) then
+       phi_slope = 0.0d0
+       do j = 1, ny-1
+          do i = 1, nx-1
+             if (slope(i,j) > 0.0d0) then
+                vector_x = -dz_dx(i,j)
+                vector_y = -dz_dy(i,j)
+                if (abs(vector_x) > 0.0d0) then
+                   phi_slope(i,j) = atan(vector_y/vector_x)
+                elseif (abs(vector_y) > 0.0d0) then
+                   if (vector_y > 0.0d0) then
+                      phi_slope(i,j) =  pi/2.0d0
+                   else
+                      phi_slope(i,j) = 3.0d0*pi/2.0d0
+                   endif
+                endif
+             else   ! vector of zero length; default to phi = 0 for flat surfaces
+                phi_slope(i,j) = 0.0d0
+             endif
+             ! The range of atan is (-pi/2, pi/2)
+             ! Add pi if the vector lies in quadrants 2 or 3
+             if (vector_x < 0.0) phi_slope(i,j) = phi_slope(i,j) + pi
+             ! Make sure phi is in the range [0,360)
+             if (phi_slope(i,j) < 0.0) phi_slope(i,j) = phi_slope(i,j) + 2.0d0*pi
+             if (phi_slope(i,j) >= 2.0d0*pi) phi_slope(i,j) = phi_slope(i,j) - 2.0d0*pi
+             ! bug check
+             if (phi_slope(i,j) < 0.0d0 .or. phi_slope(i,j) >= 2.0d0*pi) then
+                write(message,*) 'Error, glissade_slope_angle, phi out of range, i, j, phi =', &
+                     i, j, phi_slope(i,j), phi_slope(i,j)/pi
+                call write_log(message)
+             endif
+          enddo
+       enddo
+    endif   ! present(phi_slope)
+
+    ! Note: Halo update of theta_slope and phi_slope moved to higher level
+
+  end subroutine glissade_slope_angle_staggered
+
+!****************************************************************************
+
+  subroutine glissade_laplacian(&
+       nx,        ny,          &
+       dx,        dy,          &
+       field,     del2_field,  &
+       del2_mask)
+
+    !----------------------------------------------------------------
+    ! Given a scalar variable f of dimension (nx,ny), compute its Laplacian,
+    !  d^2f/dx^2 + d^2f/dy^2.
+    ! This subroutine is applied to scalar fields located at cell centers,
+    !  with dimension (nx,ny).
+    !----------------------------------------------------------------
+
+    !----------------------------------------------------------------
+    ! Input-output arguments
+    !----------------------------------------------------------------
+
+    integer, intent(in) ::      &
+         nx, ny                   ! horizontal grid dimensions
+
+    real(dp), intent(in) ::      &
+         dx, dy                   ! grid cell length (m)
+
+    real(dp), dimension(nx,ny), intent(in) ::       &
+         field                    ! scalar field, defined at cell centers
+
+    real(dp), dimension(nx,ny), intent(out) ::    &
+         del2_field               ! Laplacian of the input field
+
+    integer, dimension(nx,ny), intent(in), optional ::        &
+         del2_mask                ! = 1 for cells to be included in the Laplacian, else = 0
+
+    ! Local variables
+
+    integer :: i, j
+
+    real(dp) :: &
+         df_dx_p, df_dx_m,  &     ! x-derivative terms in the Laplacian
+         df_dy_p, df_dy_m         ! y-derivative terms in the Laplacian
+
+    integer, dimension(nx,ny) :: &
+         mask                     ! = input mask if present, else defaults to 1 everywhere
+
+    if (present(del2_mask)) then
+       mask = del2_mask
+    else
+       mask = 1
+    endif
+
+    del2_field = 0.0d0
+
+    do j = 2, ny-1
+       do i = 2, nx-1
+
+          ! x derivative terms
+          if (mask(i+1,j) == 1 .and. mask(i,j) == 1) then
+             df_dx_p = (field(i+1,j) - field(i,j)) / dx
+          else
+             df_dx_p = 0.0d0
+          endif
+          if (mask(i-1,j) == 1 .and. mask(i,j) == 1) then
+             df_dx_m = (field(i,j) - field(i-1,j)) / dx
+          else
+             df_dx_m = 0.0d0
+          endif
+
+          ! y derivative terms
+          if (mask(i,j+1) == 1 .and. mask(i,j) == 1) then
+             df_dy_p = (field(i,j+1) - field(i,j)) / dy
+          else
+             df_dy_p = 0.0d0
+          endif
+          if (mask(i,j-1) == 1 .and. mask(i,j) == 1) then
+             df_dy_m = (field(i,j) - field(i,j-1)) / dy
+          else
+             df_dy_m = 0.0d0
+          endif
+
+          ! Laplacian
+          del2_field(i,j) = (df_dx_p - df_dx_m)/dx + (df_dy_p - df_dy_m)/dy
+
+       enddo
+    enddo
+
+  end subroutine glissade_laplacian
+
+!****************************************************************************
+
+  subroutine glissade_laplacian_stagvar(&
+       nx,        ny,          &
+       dx,        dy,          &
+       field,     del2_field,  &
+       del2_mask)
+
+    !----------------------------------------------------------------
+    ! Given a scalar variable f of dimension (nx,ny), compute its Laplacian,
+    !  d^2f/dx^2 + d^2f/dy^2.
+    ! This subroutine is like the one above, but it is applied to scalar fields
+    !  located at vertices, with dimension (nx-1,ny-1).
+    !----------------------------------------------------------------
+
+    !----------------------------------------------------------------
+    ! Input-output arguments
+    !----------------------------------------------------------------
+
+    integer, intent(in) ::      &
+         nx, ny                   ! horizontal grid dimensions
+
+    real(dp), intent(in) ::      &
+         dx, dy                   ! grid cell length (m)
+
+    real(dp), dimension(nx-1,ny-1), intent(in) ::       &
+         field                    ! scalar field, defined at cell centers
+
+    real(dp), dimension(nx-1,ny-1), intent(out) ::    &
+         del2_field               ! Laplacian of the input field
+
+    integer, dimension(nx-1,ny-1), intent(in), optional ::        &
+         del2_mask                ! = 1 for cells to be included in the Laplacian, else = 0
+
+    ! Local variables
+
+    integer :: i, j
+
+    real(dp) :: &
+         df_dx_p, df_dx_m,  &     ! x-derivative terms in the Laplacian
+         df_dy_p, df_dy_m         ! y-derivative terms in the Laplacian
+
+    integer, dimension(nx-1,ny-1) :: &
+         mask                     ! = input mask if present, else defaults to 1 everywhere
+
+    if (present(del2_mask)) then
+       mask = del2_mask
+    else
+       mask = 1
+    endif
+
+    del2_field = 0.0d0
+
+    do j = 2, ny-2
+       do i = 2, nx-2
+
+          ! x derivative terms
+          if (mask(i+1,j) == 1 .and. mask(i,j) == 1) then
+             df_dx_p = (field(i+1,j) - field(i,j)) / dx
+          else
+             df_dx_p = 0.0d0
+          endif
+          if (mask(i-1,j) == 1 .and. mask(i,j) == 1) then
+             df_dx_m = (field(i,j) - field(i-1,j)) / dx
+          else
+             df_dx_m = 0.0d0
+          endif
+
+          ! y derivative terms
+          if (mask(i,j+1) == 1 .and. mask(i,j) == 1) then
+             df_dy_p = (field(i,j+1) - field(i,j)) / dy
+          else
+             df_dy_p = 0.0d0
+          endif
+          if (mask(i,j-1) == 1 .and. mask(i,j) == 1) then
+             df_dy_m = (field(i,j) - field(i,j-1)) / dy
+          else
+             df_dy_m = 0.0d0
+          endif
+
+          ! Laplacian
+          del2_field(i,j) = (df_dx_p - df_dx_m)/dx + (df_dy_p - df_dy_m)/dy
+
+       enddo
+    enddo
+
+  end subroutine glissade_laplacian_stagvar
+
+!****************************************************************************
+
+  subroutine glissade_laplacian_smoother(&
+       nx,         ny,            &
+       var,        var_smooth,    &
+       smoother_mask,             &
+       npoints_stencil)
+
+    !----------------------------------------------------------------
+    ! Given a 2D field on the ice grid, smooth the field using a Laplacian stencil.
+    ! Uses a 9-point stencil by default, but optionally can use a 5-point
+    !  or 25-point stencil.
     !----------------------------------------------------------------
 
     !----------------------------------------------------------------
@@ -1428,8 +1739,8 @@ contains
 
     if (present(npoints_stencil)) then
        npoints = npoints_stencil
-       if (.not.(npoints == 5 .or. npoints == 9)) then
-          call write_log('ERROR, glissade_laplacian_smoother: Must choose 5 or 9 points for the stencil', GM_FATAL)
+       if (.not.(npoints == 5 .or. npoints == 9 .or. npoints == 25)) then
+          call write_log('ERROR, glissade_laplacian_smoother: Must choose 5, 9 or 25 points for the stencil', GM_FATAL)
        endif
     else
        npoints = 9
@@ -1437,6 +1748,7 @@ contains
 
     sum_mask = 0.0d0
 
+    !TODO - Remove the rmask > 0 logic for n = 5 and 9?
     if (npoints == 5) then
 
        do j = 2, ny-1
@@ -1481,6 +1793,42 @@ contains
                 endif
 
              endif   ! rmask > 0
+          enddo   ! i
+       enddo   ! j
+
+    elseif (npoints == 25) then
+
+       !Note: not yet tested
+       do j = 3, ny-2
+          do i = 3, nx-2
+
+             sum_mask =  1.d0 * (rmask(i-2,j-2) + rmask(i-2,j+2) + rmask(i+2,j-2) + rmask(i+2,j+2))  &
+                       + 4.d0 * (rmask(i-1,j-2) + rmask(i-2,j-1) + rmask(i-1,j+2) + rmask(i-2,j+1)  &
+                               + rmask(i+2,j-1) + rmask(i+1,j-2) + rmask(i+1,j+2) + rmask(i+2,j+1)) &
+                       + 6.d0 * (rmask(i-2,j)   + rmask(i,j-2)   + rmask(i+2,j)   + rmask(i,j+2))   &
+                       + 16.d0 * (rmask(i-1,j-1) + rmask(i-1,j+1) + rmask(i+1,j-1) + rmask(i+1,j+1)) &
+                       + 24.d0 * (rmask(i,j-1)   + rmask(i-1,j)   + rmask(i,j+1)   + rmask(i+1,j))   &
+                       + 26.d0 *  rmask(i,j)
+
+             if (sum_mask > 0.0d0) then
+                var_smooth(i,j) = (1.d0/sum_mask) * &
+                    (1.d0 * (rmask(i-2,j-2)*var(i-2,j-2) + rmask(i-2,j+2)*var(i+2,j+2)   &
+                           + rmask(i+2,j-2)*var(i+2,j-2) + rmask(i+2,j+2)*var(i+2,j+2))  &
+                   + 4.d0 * (rmask(i-1,j-2)*var(i-1,j-2) + rmask(i-2,j-1)*var(i-2,j-1)   &
+                           + rmask(i-1,j+2)*var(i-1,j+2) + rmask(i-2,j+1)*var(i-2,j+1)   &
+                           + rmask(i+2,j-1)*var(i+2,j-1) + rmask(i+1,j-2)*var(i+1,j-2)   &
+                           + rmask(i+1,j+2)*var(i+1,j+2) + rmask(i+2,j+1)*var(i+2,j+1))  &
+                   + 6.d0 * (rmask(i-2,j)*var(i-2,j)     + rmask(i,j-2)*var(i,j-2)       &
+                           + rmask(i+2,j)*var(i+2,j)     + rmask(i,j+2)*var(i,j+2))      &
+                  + 16.d0 * (rmask(i-1,j-1)*var(i-1,j-1) + rmask(i-1,j+1)*var(i-1,j+1)   &
+                           + rmask(i+1,j-1)*var(i+1,j-1) + rmask(i+1,j+1)*var(i+1,j+1))  &
+                  + 24.d0 * (rmask(i,j-1)*var(i,j-1)     + rmask(i-1,j)*var(i-1,j)       &
+                           + rmask(i,j+1)*var(i,j+1)     + rmask(i+1,j)*var(i+1,j))      &
+                  + 36.d0 *  rmask(i,j)*var(i,j))
+             else
+                var_smooth(i,j) = var(i,j)
+             endif
+
           enddo   ! i
        enddo   ! j
 
@@ -1777,18 +2125,8 @@ contains
 
     do iter = 1, max_iter
 
-       if (present(rtest)) then
-          if (verbose_extrapolate .and. this_rank == rtest) then
-             print*, ' '
-             print*, 'glissade_scalar_extrapolate, iteration =', iter
-             print*, 'Current phi_out (m):'
-             do j = jtest+3, jtest-3, -1
-                do i = itest-3, itest+3
-                   write(6,'(f10.3)',advance='no') phi_out(i,j)
-                enddo
-                write(6,*) ' '
-             enddo
-          endif
+       if (verbose_extrapolate) then
+          if (this_rank == rtest) write(6,*) 'glissade_scalar_extrapolate, iteration =', iter
        endif
 
        ! Make a copy of the current output field
