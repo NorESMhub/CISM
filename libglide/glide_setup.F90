@@ -910,6 +910,7 @@ contains
     call GetValue(section, 'linear_solve_ncheck',         model%options%linear_solve_ncheck)
     call GetValue(section, 'linear_maxiters',             model%options%linear_maxiters)
     call GetValue(section, 'linear_tolerance',            model%options%linear_tolerance)
+    call GetValue(section, 'reproducible_sums',           model%options%reproducible_sums)
 
   end subroutine handle_ho_options
 
@@ -1138,9 +1139,9 @@ contains
          'power law                                        ', &
          'Coulomb friction law w/ effec press              ', &
          'Schoof friction law                              ', &
+         'modified Schoof friction law                     ', &
          'min of Coulomb stress and power-law stress (Tsai)', &
          'power law using effective pressure               ', &
-         'simple pattern of beta                           ', &
          'till yield stress (Picard)                       ' /)
 
     character(len=*), dimension(0:1), parameter :: ho_whichbeta_limit = (/ &
@@ -1871,8 +1872,8 @@ contains
 
        if (model%options%use_c_space_factor) then
           if (model%options%which_ho_babc == HO_BABC_COULOMB_FRICTION .or.  &
-              model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_SCHOOF .or. &
-              model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_TSAI) then
+              model%options%which_ho_babc == HO_BABC_SCHOOF .or. &
+              model%options%which_ho_babc == HO_BABC_TSAI) then
              write(message,*) 'Multiplying beta by C_space_factor'
              call write_log(message)
           else
@@ -1921,18 +1922,19 @@ contains
 
        ! Inversion options
 
-       ! Note: Inversion for Cp is currently supported for the Schoof sliding law, Tsai law, and basic power law
+       ! Note: Inversion for Cp is supported for the basic power law plus the Schoof and Tsai laws
        if (model%options%which_ho_powerlaw_c == HO_POWERLAW_C_INVERSION .or. &
            model%options%which_ho_powerlaw_c == HO_POWERLAW_C_INVERSION_BASIN) then
 
-          if (model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_SCHOOF .or.  &
-              model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_TSAI .or.  &
-              model%options%which_ho_babc == HO_BABC_POWERLAW) then
+          if (model%options%which_ho_babc == HO_BABC_POWERLAW .or. &
+              model%options%which_ho_babc == HO_BABC_SCHOOF .or.  &
+              model%options%which_ho_babc == HO_BABC_MODIFIED_SCHOOF .or.  &
+              model%options%which_ho_babc == HO_BABC_TSAI) then
              ! inversion for Cp is supported
           else
              call write_log('Error, Cp inversion is not supported for this basal BC option')
              write(message,*) 'Cp inversion is supported for these options: ', &
-                  HO_BABC_COULOMB_POWERLAW_SCHOOF, HO_BABC_COULOMB_POWERLAW_TSAI, HO_BABC_POWERLAW
+                  HO_BABC_POWERLAW, HO_BABC_SCHOOF, HO_BABC_MODIFIED_SCHOOF, HO_BABC_TSAI
              call write_log(message, GM_FATAL)
           endif
        endif
@@ -1942,12 +1944,13 @@ contains
            model%options%which_ho_coulomb_c == HO_COULOMB_C_INVERSION_BASIN) then
 
           if (model%options%which_ho_babc == HO_BABC_ZOET_IVERSON .or. &
-              model%options%which_ho_babc == HO_BABC_PSEUDO_PLASTIC) then
+              model%options%which_ho_babc == HO_BABC_PSEUDO_PLASTIC .or. &
+              model%options%which_ho_babc == HO_BABC_MODIFIED_SCHOOF) then
              ! inversion for Cc is supported
           else
              call write_log('Error, Cc inversion is not supported for this basal BC option')
              write(message,*) 'Cc inversion is supported for these options: ', &
-                  HO_BABC_ZOET_IVERSON, HO_BABC_PSEUDO_PLASTIC
+                  HO_BABC_ZOET_IVERSON, HO_BABC_PSEUDO_PLASTIC, HO_BABC_MODIFIED_SCHOOF
              call write_log(message, GM_FATAL)
           endif
        endif
@@ -2013,9 +2016,6 @@ contains
                model%basal_hydro%ho_flux_routing_scheme >= size(ho_flux_routing_scheme)) then
              call write_log('Error, HO flux routing scheme out of range', GM_FATAL)
           end if
-          write(message,*) 'ho_flux_routing_scheme  : ',model%basal_hydro%ho_flux_routing_scheme,  &
-               ho_flux_routing_scheme(model%basal_hydro%ho_flux_routing_scheme)
-          call write_log(message)
        endif
 
        write(message,*) 'ho_whicheffecpress      : ',model%options%which_ho_effecpress,  &
@@ -2230,6 +2230,10 @@ contains
           write(message,*) 'linear_tolerance        : ',model%options%linear_tolerance
           call write_log(message)
 
+          if (model%options%reproducible_sums) then
+             call write_log('Global sums will be reproducible')
+          endif
+
        end if   ! DYCORE_GLISSADE
 
        if (model%options%whichdycore == DYCORE_GLISSADE .and.   &
@@ -2242,8 +2246,15 @@ contains
        if (model%options%whichdycore == DYCORE_GLISSADE .and.   &
            (model%options%which_ho_sparse == HO_SPARSE_PCG_STANDARD .or.  &
             model%options%which_ho_sparse == HO_SPARSE_PCG_CHRONGEAR) ) then 
+          if (model%options%reproducible_sums) then
+             if (model%options%which_ho_precond == HO_PRECOND_TRIDIAG_LOCAL .or. &
+                 model%options%which_ho_precond == HO_PRECOND_TRIDIAG_GLOBAL) then
+                call write_log ('Tridiagonal preconditioners are not supported with reproducible sums.')
+                call write_log ('Please choose a different preconditioner (e.g., diagonal)', GM_FATAL)
+             endif
+          endif
           write(message,*) 'ho_whichprecond         : ',model%options%which_ho_precond,  &
-                            ho_whichprecond(model%options%which_ho_precond)
+               ho_whichprecond(model%options%which_ho_precond)
           call write_log(message)
           if (model%options%which_ho_precond < 0 .or. model%options%which_ho_precond >= size(ho_whichprecond)) then
              call write_log('Error, glissade preconditioner out of range', GM_FATAL)
@@ -2743,6 +2754,9 @@ contains
     if (model%options%which_ho_babc == HO_BABC_BETA_CONSTANT) then
        write(message,*) 'uniform beta (Pa yr/m)        : ',model%basal_physics%ho_beta_const
        call write_log(message)
+    elseif (model%options%which_ho_babc == HO_BABC_BETA_LARGE) then
+       write(message,*) 'large beta (Pa yr/m) : ',model%basal_physics%ho_beta_large
+       call write_log(message)
     elseif (model%options%which_ho_babc == HO_BABC_BETA_BPMP) then
        write(message,*) 'large (frozen) beta (Pa yr/m) : ',model%basal_physics%ho_beta_large
        call write_log(message)
@@ -2811,7 +2825,7 @@ contains
        call write_log(message)
        write(message,*) 'bed bump wavelength for Coulomb friction law : ', model%basal_physics%coulomb_bump_wavelength
        call write_log(message)
-    elseif (model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_SCHOOF) then
+    elseif (model%options%which_ho_babc == HO_BABC_SCHOOF) then
        ! Note: The Schoof law typically uses a spatially variable powerlaw_c.
        !       If so, the value written here is just the initial value.
        write(message,*) 'Cc for Schoof Coulomb law                    : ', model%basal_physics%coulomb_c_const
@@ -2824,7 +2838,24 @@ contains
        call write_log(message)
        write(message,*) 'm exponent for Schoof power law              : ', model%basal_physics%powerlaw_m
        call write_log(message)
-    elseif (model%options%which_ho_babc == HO_BABC_COULOMB_POWERLAW_TSAI) then
+    elseif (model%options%which_ho_babc == HO_BABC_MODIFIED_SCHOOF) then
+       ! Note: This law supports inversion for both Cc and Cp.
+       !       When inverting, the values here are just the initial values.
+       write(message,*) 'Cc for modified Schoof law                   : ', model%basal_physics%coulomb_c_const
+       call write_log(message)
+       write(message,*) 'Max Cc                                       : ', model%basal_physics%coulomb_c_max
+       call write_log(message)
+       write(message,*) 'Min Cc                                       : ', model%basal_physics%coulomb_c_min
+       call write_log(message)
+       write(message,*) 'Cp for modified Schoof law, Pa (m/yr)^(-1/3) : ', model%basal_physics%powerlaw_c_const
+       call write_log(message)
+       write(message,*) 'Max Cp                                       : ', model%basal_physics%powerlaw_c_max
+       call write_log(message)
+       write(message,*) 'Min Cp                                       : ', model%basal_physics%powerlaw_c_min
+       call write_log(message)
+       write(message,*) 'm exponent for power law                     : ', model%basal_physics%powerlaw_m
+       call write_log(message)
+    elseif (model%options%which_ho_babc == HO_BABC_TSAI) then
        ! Note: The Tsai law typically uses a spatially variable powerlaw_c. 
        !       If so, the value written here is just the initial value.
        write(message,*) 'Cc for Tsai Coulomb law                      : ', model%basal_physics%coulomb_c_const
@@ -2925,6 +2956,9 @@ contains
        call write_log(message)
        write(message,*) 'coulomb_c min                                : ', &
             model%basal_physics%coulomb_c_min
+       call write_log(message)
+       write(message,*) 'coulomb_c const                              : ', &
+            model%basal_physics%coulomb_c_const
        call write_log(message)
        write(message,*) 'thickness scale (m) for C_c inversion        : ', &
             model%inversion%babc_thck_scale
@@ -3354,7 +3388,8 @@ contains
     ! flux routing
     call GetValue(section, 'ho_flux_routing_scheme', model%basal_hydro%ho_flux_routing_scheme)
     call GetValue(section, 'const_source', model%basal_hydro%const_source)
-    call GetValue(section, 'btemp_scale', model%basal_hydro%btemp_scale)
+    call GetValue(section, 'btemp_flow_scale', model%basal_hydro%btemp_flow_scale)
+    call GetValue(section, 'btemp_freeze_scale', model%basal_hydro%btemp_freeze_scale)
 
     ! effective pressure options and parameters
     call GetValue(section, 'effecpress_delta',   model%basal_hydro%effecpress_delta)
@@ -3429,6 +3464,16 @@ contains
             model%basal_hydro%ho_flux_routing_scheme >= size(ho_flux_routing_scheme)) then
           call write_log('Error, HO flux routing scheme out of range', GM_FATAL)
        end if
+       if (model%options%reproducible_sums) then
+          if (model%basal_hydro%ho_flux_routing_scheme /= HO_FLUX_ROUTING_D8) then
+             call write_log('Error, this flux_routing scheme is not supported with reproducible sums')
+             call write_log('Please use D8 flux-routing or turn off reproducible sums', GM_FATAL)
+          endif
+          if (model%basal_hydro%btemp_freeze_scale > 0.0d0) then
+             call write_log('Error, flux-routing does not support refreezing with reproducible sums')
+             call write_log('Please set btemp_freeze_scale = 0 or turn off reproducible sums', GM_FATAL)
+          endif
+       endif  ! reproducible sums
        write(message,*) 'ho_flux_routing_scheme        : ',model%basal_hydro%ho_flux_routing_scheme,  &
             ho_flux_routing_scheme(model%basal_hydro%ho_flux_routing_scheme)
        call write_log(message)
@@ -3436,8 +3481,14 @@ contains
           write(message,*) 'constant melt source at the bed (m/yr): ', model%basal_hydro%const_source
           call write_log(message)
        endif
-       if (model%basal_hydro%btemp_scale > 0.0d0) then
-          write(message,*) 'temp scale (deg C) for frz/thaw transition: ', model%basal_hydro%btemp_scale
+       if (model%basal_hydro%btemp_flow_scale > 0.0d0) then
+          write(message,*) 'temp scale (deg C) for flow around frozen bed: ', &
+               model%basal_hydro%btemp_flow_scale
+          call write_log(message)
+       endif
+       if (model%basal_hydro%btemp_freeze_scale > 0.0d0) then
+          write(message,*) 'temp scale (deg C) for refreezing at the bed: ', &
+               model%basal_hydro%btemp_freeze_scale
           call write_log(message)
        endif
        if (model%options%which_ho_effecpress == HO_EFFECPRESS_BWAT) then
@@ -4050,12 +4101,12 @@ contains
     ! basal sliding option
     select case (options%which_ho_babc)
        !WHL - Removed effecpress as a restart variable; it is recomputed with each velocity solve.
-!!      case (HO_BABC_POWERLAW, HO_BABC_COULOMB_FRICTION, HO_BABC_COULOMB_POWERLAW_SCHOOF)
+!!      case (HO_BABC_POWERLAW, HO_BABC_COULOMB_FRICTION, HO_BABC_SCHOOF)
 !!        ! These friction laws need effective pressure
 !!        call glide_add_to_restart_variable_list('effecpress', model_id)
 !!      case(HO_BABC_COULOMB_POWERLAW_TSAI)
 !!        call glide_add_to_restart_variable_list('effecpress', model_id)
-      case (HO_BABC_COULOMB_FRICTION, HO_BABC_COULOMB_POWERLAW_SCHOOF, HO_BABC_COULOMB_POWERLAW_TSAI)
+      case (HO_BABC_COULOMB_FRICTION, HO_BABC_SCHOOF, HO_BABC_TSAI)
          ! Note: These options compute beta internally, so it does not need to be in the restart file.
          if (options%use_c_space_factor) then
             ! c_space_factor needs to be in the restart file
