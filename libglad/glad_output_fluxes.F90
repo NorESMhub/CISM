@@ -95,8 +95,10 @@ contains
     !                Divide by dt to convert to kg/m^2/s
 
     ! Convert to kg/m^2/s
-    output_fluxes%rofi_sum(:,:) = output_fluxes%rofi_sum(:,:)  &
-         + model%calving%calving_thck(:,:) * rhoi / model%numerics%dt
+    output_fluxes%rofi_sum(:,:) = output_fluxes%rofi_sum(:,:)         &
+       + ( model%calving%calving_thck(:,:)                            &
+       + model%calving%forceretreat_thck(:,:)                         &
+       + model%calving%rmicecap_thck(:,:) ) * rhoi / model%numerics%dt
 
     !--------------------------------------------------------------------
     ! Accumulate liquid runoff (basal melting)

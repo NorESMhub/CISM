@@ -637,6 +637,7 @@ contains
        model%geometry%total_forceretreat_flux = tot_forceretreat_flux
        model%geometry%total_rmicecap_flux = tot_rmicecap_flux
        model%geometry%total_gl_flux = tot_gl_flux
+       model%geometry%total_frontal_melt_flux = tot_frontal_melt_flux
 
     endif  ! Glissade dycore
 
