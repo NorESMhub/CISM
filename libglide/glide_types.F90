@@ -457,6 +457,12 @@ module glide_types
     integer :: nx_block = 0      ! user-specified block sizes
     integer :: ny_block = 0      ! one task per block; optionally, tasks not assigned to inactive blocks
 
+    ! time bounds variables
+!    real(dp), dimension(:), pointer :: &
+!         time_bounds             ! start and end points in time for tavg output
+!    integer, dimension(:), pointer :: &
+!         tbnd => null()          ! time bounds dimension variable, used for I/O
+
   end type glide_general
 
   !++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -1484,6 +1490,16 @@ module glide_types
   !                    If 'average = 1' in the acab entry of glide_vars.def, then acab_tavg is automatically
   !                     accumulated and averaged during runtime, without any additional code needed.
   !                    Other variables with a '_tavg' suffix are handled similarly.
+  !                    Between writes, the array acab_tavg holds the running sum of acab*tinc, not the average.
+  !                    The sum is divided by the total time only when the output variable acab_tavg is written,
+  !                     and then the array is reset to zero (see NAME_avg_accumulate and NAME_avg_reset
+  !                     in ncdf_template.F90.in).
+  !                    For exact restart in the middle of an averaging interval, the same array is also written
+  !                     to restart files, without dividing by the total time, as the output variable acab_tavg_sum.
+  !                     On a standard restart, acab_tavg_sum is read back into the array acab_tavg.
+  !                    The '_tavg_sum' variables are generated automatically (generate_ncvars.py) and added
+  !                     automatically to the restart variable list for each '_tavg' field in an output file;
+  !                     there is no separate '_tavg_sum' array, and users should not list them in output files.
   !
   ! Note on smb_corrected: Optionally, smb can be supplemented with an anomaly.
   !                        The background field, smb, does not include the anomaly.
@@ -1657,6 +1673,10 @@ module glide_types
           frontal_melt_factor = 1.0d0            !> multiplier for Rignot frontal melt. A value of 1.6 was proposed for ISMIP7
                                                  !> based on new obs. This may also be used for sampling uncertainty and 
                                                  !> to correct for resolution depencence
+
+     integer :: naxis = 1                                    !> number of axes for calvingMIP diagnostics
+                                                             !> set to 8 below if running on a calvingMIP domain
+     integer, dimension(:), pointer :: axis => null()        !> axis dimension variable, used for I/O
 
   end type glide_calving
 
@@ -1903,12 +1923,16 @@ module glide_types
      !----------------------------------
 
      ! ocean grid and basin number
-     integer  :: nbasin = 0                         !> number of basins (= 16 for IMBIE2)
+     integer  :: nbasin = 1                         !> number of basins (= 16 for IMBIE2)
      integer  :: nzocn = 1                          !> number of ocean levels
      real(dp) :: dzocn = 0.d0                       !> thickness of ocean levels; nonzero value set in config file
+
      real(dp), dimension(:), pointer :: &
           zocn => null()                            !> ocean levels (m) where forcing is provided, negative below sea level
- 
+
+     integer, dimension(:), pointer :: &
+          basin => null()                           !> basin dimension variable, used for I/O
+
      real(dp) :: gamma0 = 0.d0                      !> coefficient relating sub-shelf melt rates to thermal forcing (m/yr)
      real(dp) :: thermal_forcing_basin_min = 0.0d0  !> min value of thermal_forcing_basin (deg C) applied to nonlocal and nonlocal-slope schemes
 
@@ -2901,6 +2925,7 @@ contains
 
     integer :: ewn,nsn,upn               !> local array dimensions
     integer :: global_ewn, global_nsn    !> global array dimensions
+    integer :: n
 
     ! for simplicity, copy these values...
     ewn = model%general%ewn
@@ -2939,6 +2964,11 @@ contains
     ! latitude and longitude
     call coordsystem_allocate(model%general%ice_grid, model%general%lat)
     call coordsystem_allocate(model%general%ice_grid, model%general%lon)
+
+    ! boundary dimension (= 2 for start and end points in time)
+!    allocate(model%general%time_bounds(2))
+!    allocate(model%general%tbnd(2))
+!    model%general%tbnd = (/1,2/)
 
     ! ice domain mask (to identify active blocks)
     call coordsystem_allocate(model%general%ice_grid, model%general%ice_domain_mask)
@@ -3290,6 +3320,14 @@ contains
        call coordsystem_allocate(model%general%ice_grid, model%inversion%floating_thck_target)
     endif
 
+    ! basin dimension variable, used for I/O
+    if (model%ocean_data%nbasin >= 1) then
+       allocate(model%ocean_data%basin(model%ocean_data%nbasin))
+       do n = 1, model%ocean_data%nbasin
+          model%ocean_data%basin(n) = n
+       enddo
+    endif
+
     ! climate arrays
     call coordsystem_allocate(model%general%ice_grid, model%climate%acab)
     call coordsystem_allocate(model%general%ice_grid, model%climate%acab_tavg)
@@ -3373,6 +3411,13 @@ contains
     else
        ! allocate with size 1, since they need to be allocated to be passed to calving subroutine
        allocate(model%calving%damage(1,1,1))
+    endif
+    if (model%options%which_ho_calvingmip_domain /= HO_CALVINGMIP_DOMAIN_NONE) then
+       model%calving%naxis = 8
+       allocate(model%calving%axis(model%calving%naxis))
+       do n = 1, model%calving%naxis
+          model%calving%axis(n) = n
+       enddo
     endif
 
     ! TDOD allocate thermal_forcing only when needed in SMMELT_COUPLED
