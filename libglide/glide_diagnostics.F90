@@ -515,10 +515,21 @@ contains
        !  and the part passed to the dycore but not applied.
        ! These are zero for standalone runs.
        ! Note: tot_smb_cpl_flux = tot_smb_flux + tot_smb_unapplied_glad_flux + tot_smb_unapplied_flux
-       tot_smb_cpl_flux = parallel_global_sum(model%climate%acab_cpl*cell_area, parallel) * rhoi
-       tot_smb_unapplied_glad_flux = parallel_global_sum(model%climate%acab_unapplied_glad*cell_area, parallel) * rhoi
-       tot_smb_unapplied_flux = parallel_global_sum(model%climate%acab_unapplied*cell_area, parallel) * rhoi
-
+        
+       tot_smb_cpl_flux = 0.d0
+       tot_smb_unapplied_glad_flux = 0.d0
+       tot_smb_unapplied_flux = 0.d0
+       do j = lhalo+1, nsn-uhalo
+          do i = lhalo+1, ewn-uhalo
+       tot_smb_cpl_flux = tot_smb_cpl_flux + model%climate%acab_cpl(i,j)*cell_area(i,j)
+       tot_smb_unapplied_glad_flux = tot_smb_unapplied_glad_flux + model%climate%acab_unapplied_glad(i,j)*cell_area(i,j)
+       tot_smb_unapplied_flux = tot_smb_unapplied_flux + model%climate%acab_unapplied(i,j)*cell_area(i,j)
+          end do
+       end do
+       tot_smb_cpl_flux = parallel_reduce_sum(tot_smb_cpl_flux) * rhoi
+       tot_smb_unapplied_glad_flux = parallel_reduce_sum(tot_smb_unapplied_glad_flux) * rhoi
+       tot_smb_unapplied_flux = parallel_reduce_sum(tot_smb_unapplied_flux) * rhoi
+       
        ! mean accumulation/ablation rate (m/yr)
        ! Note: This will be only approximate if some ice has melted completely during the time step
        if (tot_area > eps) then

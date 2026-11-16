@@ -720,13 +720,6 @@ long_name:     total surface mass balance flux
 data:          data%geometry%total_smb_flux
 average:       1
 
-[total_smb_cpl_flux]
-dimensions:    time
-units:         kg/s
-long_name:     total surface mass balance flux received from the coupler
-data:          data%geometry%total_smb_cpl_flux
-average:       1
-
 [total_smb_unapplied_glad_flux]
 dimensions:    time
 units:         kg/s
@@ -1722,21 +1715,6 @@ units:         kg/s
 long_name:     total surface mass balance flux received from the coupler
 data:          data%geometry%total_smb_cpl_flux
 average:       1
-
-[total_smb_unapplied_glad_flux]
-dimensions:    time
-units:         kg/s
-long_name:     total surface mass balance flux from the coupler that is zeroed by GLAD
-data:          data%geometry%total_smb_unapplied_glad_flux
-average:       1
-
-[total_smb_unapplied_flux]
-dimensions:    time
-units:         kg/s
-long_name:     total surface mass balance flux passed to the dycore but not applied
-data:          data%geometry%total_smb_unapplied_flux
-average:       1standard_name: land_ice_geometry_at_grounding_line_northward
-coordinate:    lon lat
 
 [total_gl_flux]
 dimensions:    time
