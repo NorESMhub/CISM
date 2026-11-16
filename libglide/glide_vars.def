@@ -720,6 +720,27 @@ long_name:     total surface mass balance flux
 data:          data%geometry%total_smb_flux
 average:       1
 
+[total_smb_cpl_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux received from the coupler
+data:          data%geometry%total_smb_cpl_flux
+average:       1
+
+[total_smb_unapplied_glad_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux from the coupler that is zeroed by GLAD
+data:          data%geometry%total_smb_unapplied_glad_flux
+average:       1
+
+[total_smb_unapplied_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux passed to the dycore but not applied
+data:          data%geometry%total_smb_unapplied_flux
+average:       1
+
 [total_bmb_flux]
 dimensions:    time
 units:         kg/s
@@ -882,6 +903,31 @@ data:          data%climate%acab_applied
 factor:        scyr
 standard_name: land_ice_surface_specific_mass_balance_applied
 average:       1
+
+[acab_cpl]
+dimensions:    time, y1, x1
+units:         meter/year ice
+long_name:     surface mass balance received from the coupler, before masking
+data:          data%climate%acab_cpl
+factor:        scyr
+average:       1
+
+[acab_unapplied_glad]
+dimensions:    time, y1, x1
+units:         meter/year ice
+long_name:     surface mass balance from the coupler that is zeroed by GLAD
+data:          data%climate%acab_unapplied_glad
+factor:        scyr
+average:       1
+
+[acab_unapplied]
+dimensions:    time, y1, x1
+units:         meter/year ice
+long_name:     surface mass balance passed to the dycore but not applied
+data:          data%climate%acab_unapplied
+factor:        scyr
+average:       1
+
 
 [overwrite_acab_mask]
 dimensions:    time, y1, x1
@@ -1630,7 +1676,7 @@ dimensions:    time, y1, x1
 units:         kg/m2/s
 long_name:     calving flux
 data:          data%geometry%calving_flux
-standard_name: land_ice_specific_mass_flux_due_to_calving
+standard_name: land_ice_specific_geometry_due_to_calving
 average:       1
 
 [forceretreat_flux]
@@ -1652,7 +1698,7 @@ dimensions:    time, y1, x1
 units:         kg/m/s
 long_name:     grounding line flux
 data:          data%geometry%gl_flux
-standard_name: land_ice_mass_flux_at_grounding_line
+standard_name: land_ice_geometry_at_grounding_line
 coordinate:    lon lat
 average:       1
 
@@ -1661,7 +1707,7 @@ dimensions:    time, y1, x1
 units:         kg/m/s
 long_name:     grounding line flux eastward
 data:          data%geometry%gl_flux_east
-standard_name: land_ice_mass_flux_at_grounding_line_eastward
+standard_name: land_ice_geometry_at_grounding_line_eastward
 coordinate:    lon lat
 
 [gl_flux_north]
@@ -1669,7 +1715,27 @@ dimensions:    time, y1, x1
 units:         kg/m/s
 long_name:     grounding line flux northward
 data:          data%geometry%gl_flux_north
-standard_name: land_ice_mass_flux_at_grounding_line_northward
+
+[total_smb_cpl_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux received from the coupler
+data:          data%geometry%total_smb_cpl_flux
+average:       1
+
+[total_smb_unapplied_glad_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux from the coupler that is zeroed by GLAD
+data:          data%geometry%total_smb_unapplied_glad_flux
+average:       1
+
+[total_smb_unapplied_flux]
+dimensions:    time
+units:         kg/s
+long_name:     total surface mass balance flux passed to the dycore but not applied
+data:          data%geometry%total_smb_unapplied_flux
+average:       1standard_name: land_ice_geometry_at_grounding_line_northward
 coordinate:    lon lat
 
 [total_gl_flux]

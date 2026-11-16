@@ -99,6 +99,12 @@ contains
        + ( model%calving%calving_thck(:,:)                            &
        + model%calving%forceretreat_thck(:,:)                         &
        + model%calving%rmicecap_thck(:,:) ) * rhoi / model%numerics%dt
+    
+    ! Add the positive SMB that was passed to the dycore but not applied.
+    ! Note: model%climate%acab_unapplied has units of m/s ice; multiply by rhoi to convert to kg/m^2/s.
+    !       Negative values (melt in excess of the ice present) cannot be returned as runoff.
+    output_fluxes%rofi_sum(:,:) = output_fluxes%rofi_sum(:,:)  &
+         + max(model%climate%acab_unapplied(:,:), 0.0d0) * rhoi
 
     !--------------------------------------------------------------------
     ! Accumulate liquid runoff (basal melting)
