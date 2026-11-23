@@ -193,6 +193,9 @@ contains
          thck_above_flotation,          &    ! thickness above flotation
          tot_energy,                    &    ! total ice energy (J)
          tot_smb_flux,                  &    ! total surface mass balance flux (kg/s)
+         tot_smb_cpl_flux,              &    ! total SMB flux received from the coupler (kg/s)
+         tot_smb_unapplied_glad_flux,   &    ! total SMB flux zeroed by GLAD (kg/s)
+         tot_smb_unapplied_flux,        &    ! total SMB flux passed to the dycore but not applied (kg/s)
          tot_bmb_flux,                  &    ! total basal mass balance flux (kg/s)
          tot_calving_flux,              &    ! total calving flux (kg/s)
          tot_frontal_melt_flux,         &    ! total frontal melt flux (kg/s)
@@ -507,7 +510,26 @@ contains
 
        ! total surface mass balance flux (kg/s)
        tot_smb_flux = tot_acab * rhoi / scyr   ! convert m^3/yr to kg/s
-
+       
+       ! SMB budget terms for coupled runs (kg/s): SMB received from the coupler, the part zeroed by GLAD,
+       !  and the part passed to the dycore but not applied.
+       ! These are zero for standalone runs.
+       ! Note: tot_smb_cpl_flux = tot_smb_flux + tot_smb_unapplied_glad_flux + tot_smb_unapplied_flux
+        
+       tot_smb_cpl_flux = 0.d0
+       tot_smb_unapplied_glad_flux = 0.d0
+       tot_smb_unapplied_flux = 0.d0
+       do j = lhalo+1, nsn-uhalo
+          do i = lhalo+1, ewn-uhalo
+       tot_smb_cpl_flux = tot_smb_cpl_flux + model%climate%acab_cpl(i,j)*cell_area(i,j)
+       tot_smb_unapplied_glad_flux = tot_smb_unapplied_glad_flux + model%climate%acab_unapplied_glad(i,j)*cell_area(i,j)
+       tot_smb_unapplied_flux = tot_smb_unapplied_flux + model%climate%acab_unapplied(i,j)*cell_area(i,j)
+          end do
+       end do
+       tot_smb_cpl_flux = parallel_reduce_sum(tot_smb_cpl_flux) * rhoi
+       tot_smb_unapplied_glad_flux = parallel_reduce_sum(tot_smb_unapplied_glad_flux) * rhoi
+       tot_smb_unapplied_flux = parallel_reduce_sum(tot_smb_unapplied_flux) * rhoi
+       
        ! mean accumulation/ablation rate (m/yr)
        ! Note: This will be only approximate if some ice has melted completely during the time step
        if (tot_area > eps) then
@@ -632,6 +654,9 @@ contains
        ! copy some global scalars to the geometry derived type
        ! Note: These have SI units (e.g, m^2 for area, m^3 for volume)
        model%geometry%total_smb_flux = tot_smb_flux
+       model%geometry%total_smb_cpl_flux = tot_smb_cpl_flux
+       model%geometry%total_smb_unapplied_glad_flux = tot_smb_unapplied_glad_flux
+       model%geometry%total_smb_unapplied_flux = tot_smb_unapplied_flux
        model%geometry%total_bmb_flux = tot_bmb_flux
        model%geometry%total_calving_flux = tot_calving_flux
        model%geometry%total_forceretreat_flux = tot_forceretreat_flux
@@ -696,6 +721,14 @@ contains
           write(message,'(a31,e24.16)') 'Total SMB flux (kg/s)          ', tot_smb_flux
           call write_log(trim(message), type = GM_DIAGNOSTIC)
 
+          if (abs(tot_smb_cpl_flux) > 0.0d0) then   ! coupled run
+             write(message,'(a25,e24.16)') 'SMB flux from cpl (kg/s) ', tot_smb_cpl_flux
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+             write(message,'(a25,e24.16)') 'SMB zeroed by GLAD (kg/s)', tot_smb_unapplied_glad_flux
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+             write(message,'(a25,e24.16)') 'SMB unapplied (kg/s)     ', tot_smb_unapplied_flux
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+          endif
           write(message,'(a31,e24.16)') 'Total BMB flux (kg/s)          ', tot_bmb_flux
           call write_log(trim(message), type = GM_DIAGNOSTIC)
 
@@ -723,6 +756,15 @@ contains
 
           write(message,'(a31,e24.16)') 'Total SMB flux (Gt/y)          ', tot_smb_flux * factor
           call write_log(trim(message), type = GM_DIAGNOSTIC)
+
+          if (abs(tot_smb_cpl_flux) > 0.0d0) then   ! coupled run
+             write(message,'(a25,e24.16)') 'SMB flux from cpl (Gt/y) ', tot_smb_cpl_flux * factor
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+             write(message,'(a25,e24.16)') 'SMB zeroed by GLAD (Gt/y)', tot_smb_unapplied_glad_flux * factor
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+             write(message,'(a25,e24.16)') 'SMB unapplied (Gt/y)     ', tot_smb_unapplied_flux * factor
+             call write_log(trim(message), type = GM_DIAGNOSTIC)
+          endif
 
           write(message,'(a31,e24.16)') 'Total BMB flux (Gt/y)          ', tot_bmb_flux * factor
           call write_log(trim(message), type = GM_DIAGNOSTIC)
